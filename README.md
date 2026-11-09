@@ -8,8 +8,9 @@ Shared composite actions [validate](actions/validate/README.md),
 [prepare](actions/prepare/README.md), [build](actions/build/README.md),
 [recover](actions/recover/README.md), and [publish](actions/publish/README.md) are
 implemented and exercised by CI against a separate sample library.
-The local workflow templates and library migrations are next; existing libraries
-should keep their current workflows until those are updated.
+The [library workflow templates](templates/README.md) call these actions at a
+tested, immutable commit. Aster.Net is the first library migration; migrate other
+libraries after confirming a complete pilot release.
 
 ## Repository layout
 
