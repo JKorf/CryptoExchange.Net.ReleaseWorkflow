@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 $scripts = (Resolve-Path "$PSScriptRoot/..").Path
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('preparation-test-' + [guid]::NewGuid().ToString('N'))
 & "$PSScriptRoot/New-ValidationFixture.ps1" -Directory $fixture
+$oldNativeExitCode = $LASTEXITCODE
 $oldOutput = $env:GITHUB_OUTPUT; $oldSummary = $env:GITHUB_STEP_SUMMARY; $oldIntegration = $env:INTEGRATION
 $output = Join-Path ([IO.Path]::GetTempPath()) ('preparation-output-' + [guid]::NewGuid().ToString('N'))
 $env:GITHUB_OUTPUT = $output
@@ -68,4 +69,12 @@ try {
     Reject { & "$scripts/Complete-ReleasePreparation.ps1" -PlanPath $planPath -BodyPath $bodyPath -ResultsDirectory $empty } 'No NUnit XML'
     $checks++
     Write-Host "$checks preparation checks passed. Git origin and test reports are local fixtures; dotnet is mocked."
-} finally { Pop-Location; $env:GITHUB_OUTPUT = $oldOutput; $env:GITHUB_STEP_SUMMARY = $oldSummary; $env:INTEGRATION = $oldIntegration }
+} finally {
+    Pop-Location
+    $env:GITHUB_OUTPUT = $oldOutput
+    $env:GITHUB_STEP_SUMMARY = $oldSummary
+    $env:INTEGRATION = $oldIntegration
+    # The negative tests intentionally set this to 1. GitHub's pwsh wrapper
+    # exits with LASTEXITCODE even after all assertions pass, so restore it.
+    Set-Variable LASTEXITCODE $oldNativeExitCode -Scope Global
+}
