@@ -10,7 +10,20 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . "$PSScriptRoot/Release-PackageFunctions.ps1"
 $manifest = Assert-ReleaseArtifacts $ArtifactDirectory $Repository $Commit $PullRequest
-if ($ValidateOnly) { Write-Host 'Release artifact identity, metadata and checksums verified.'; return }
+function Write-PublishOutputs([bool]$Published, [string]$ReleaseUrl = '') {
+    if (-not $env:GITHUB_OUTPUT) { return }
+    $values = [ordered]@{
+        published = $Published.ToString().ToLowerInvariant()
+        package_id = $manifest.packageId; version = $manifest.version; tag = $manifest.tag
+        commit = $Commit; pull_request = $PullRequest; release_url = $ReleaseUrl
+        nuget_url = $(if ($Published) { "https://www.nuget.org/packages/$($manifest.packageId)/$($manifest.version)" } else { '' })
+    }
+    foreach ($entry in $values.GetEnumerator()) {
+        if ([string]$entry.Value -match '[\r\n]') { throw "Unexpected newline in publishing output $($entry.Key)." }
+    }
+    foreach ($entry in $values.GetEnumerator()) { "$($entry.Key)=$($entry.Value)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8NoBOM }
+}
+if ($ValidateOnly) { Write-Host 'Release artifact identity, metadata and checksums verified.'; Write-PublishOutputs $false; return }
 if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN) -or [string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) { throw 'Publishing credentials are required.' }
 $package = (Resolve-Path -LiteralPath (Join-Path $ArtifactDirectory $manifest.packageFile)).Path
 $symbols = (Resolve-Path -LiteralPath (Join-Path $ArtifactDirectory $manifest.symbolFile)).Path
@@ -90,6 +103,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Symbol package publishing failed.' }
 
 # Registry acceptance completes publication; NuGet indexing proceeds separately.
 if ($release.draft) { $release = Invoke-ReleaseApi "repos/$Repository/releases/$($release.id)" 'PATCH' @{ draft = $false } }
+Write-PublishOutputs $true $release.html_url
 Write-Host "Published $($manifest.packageId) $($manifest.version): $($release.html_url)"
 if ($env:GITHUB_STEP_SUMMARY) {
     "Published release: $($release.html_url)`n`nNuGet: https://www.nuget.org/packages/$($manifest.packageId)/$($manifest.version)" >> $env:GITHUB_STEP_SUMMARY

@@ -53,4 +53,9 @@ preparation test report cannot validate later edits. See
 ./scripts/tests/Test-TestWarnings.ps1
 ./scripts/tests/Test-PublishRelease.ps1
 ./scripts/tests/Test-ReleaseHttp.ps1
+./scripts/tests/Test-ReleaseValidation.ps1
+./scripts/tests/Test-ReleasePreparation.ps1
+./scripts/tests/Test-ReleaseBuild.ps1
+./scripts/tests/Test-ReleaseRecovery.ps1
+./scripts/tests/Test-ReleasePublishing.ps1
 ```

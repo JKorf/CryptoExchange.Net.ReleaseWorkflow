@@ -5,11 +5,11 @@ PowerShell scripts for preparing release PRs, building and verifying packages,
 publishing approved releases, and recovering interrupted publications.
 
 Shared composite actions [validate](actions/validate/README.md),
-[prepare](actions/prepare/README.md), [build](actions/build/README.md), and
-[recover](actions/recover/README.md) are
+[prepare](actions/prepare/README.md), [build](actions/build/README.md),
+[recover](actions/recover/README.md), and [publish](actions/publish/README.md) are
 implemented and exercised by CI against a separate sample library.
-Publish remains a placeholder; existing
-libraries should keep their current workflows until the complete flow is ready.
+The local workflow templates and library migrations are next; existing libraries
+should keep their current workflows until those are updated.
 
 ## Repository layout
 
@@ -39,6 +39,7 @@ actions/validate/                  Shared validation action and usage documentat
 actions/prepare/                   Shared preparation action and usage documentation
 actions/build/                     Shared final-build action and usage documentation
 actions/recover/                   Shared artifact-recovery action and usage documentation
+actions/publish/                   Shared approved-publication action and usage documentation
 ```
 
 ## Execution requirements
@@ -143,6 +144,7 @@ pwsh -NoProfile -File ./scripts/tests/Test-ReleaseValidation.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleasePreparation.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseBuild.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseRecovery.ps1
+pwsh -NoProfile -File ./scripts/tests/Test-ReleasePublishing.ps1
 ```
 
 The tests use temporary files/Git repositories, mocked GitHub responses, and a
@@ -151,13 +153,15 @@ or send announcements. They do not build a real library or verify live credentia
 
 [The test workflow](.github/workflows/test.yml) runs on pushes and PRs to `main`,
 and can also be started manually. Its Windows/Linux matrix runs syntax checks and
-all seven suites, then exercises validation, preparation and final build using a
+all eight suites, then exercises validation, preparation and final build using a
 separate buildable sample library. The actions install the configured SDK,
 restore/build/pack the sample and upload its verified package artifact. The CI
 sample has no test projects; the regression suites use mocked tests for warnings
 and failure paths. CI downloads the built sample artifact and verifies recovery
 against it, using mocked original-run metadata rather than creating a failed PR.
-The sample artifacts are not published to a registry.
+The publish action verifies downloaded samples in validation-only mode. Full
+publishing behavior uses mocked registries/GitHub/CLI transports; sample
+artifacts are not published to a registry.
 CI needs no repository secrets. Both matrix jobs should pass
 before a shared automation version is released.
 

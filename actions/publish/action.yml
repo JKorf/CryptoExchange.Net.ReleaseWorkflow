@@ -1,0 +1,77 @@
+name: Release publish
+description: Publish approved packages and complete the GitHub release
+
+inputs:
+  artifact-directory:
+    description: Downloaded original package artifact directory
+    required: true
+  commit:
+    description: Original merged source commit
+    required: true
+  pull-request:
+    description: Original preparation PR number
+    required: true
+  repository:
+    description: Library owner/repository
+    default: ${{ github.repository }}
+  github-token:
+    description: GitHub App token for tag/release operations; supplied after approval
+    default: ${{ github.token }}
+  github-packages-token:
+    description: Library workflow token with Packages write permission
+    default: ${{ github.token }}
+  nuget-api-key:
+    description: Short-lived key from the caller's NuGet/login step; needed for publication
+    default: ''
+  validate-only:
+    description: Verify artifacts without external requests or publication (true/false)
+    default: 'false'
+
+outputs:
+  published:
+    description: True after successful publication; false for validation-only
+    value: ${{ steps.publish.outputs.published }}
+  release_url:
+    description: Published GitHub release URL; empty for validation-only
+    value: ${{ steps.publish.outputs.release_url }}
+  nuget_url:
+    description: NuGet package URL; empty for validation-only
+    value: ${{ steps.publish.outputs.nuget_url }}
+  package_id:
+    description: Verified package ID
+    value: ${{ steps.publish.outputs.package_id }}
+  version:
+    description: Original release version
+    value: ${{ steps.publish.outputs.version }}
+  tag:
+    description: Original release tag
+    value: ${{ steps.publish.outputs.tag }}
+  commit:
+    description: Original merged source commit
+    value: ${{ steps.publish.outputs.commit }}
+  pull_request:
+    description: Original preparation PR number
+    value: ${{ steps.publish.outputs.pull_request }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify and publish approved artifacts
+      id: publish
+      shell: pwsh
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        ARTIFACTS_PATH: ${{ inputs.artifact-directory }}
+        SOURCE_COMMIT: ${{ inputs.commit }}
+        PR_NUMBER: ${{ inputs.pull-request }}
+        RELEASE_REPOSITORY: ${{ inputs.repository }}
+        VALIDATE_ONLY: ${{ inputs.validate-only }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_PACKAGES_TOKEN: ${{ inputs.github-packages-token }}
+        NUGET_API_KEY: ${{ inputs.nuget-api-key }}
+      run: |
+        if ($env:VALIDATE_ONLY -notin @('true', 'false')) { throw 'validate-only must be true or false.' }
+        if ($env:SOURCE_COMMIT -cnotmatch '^[0-9a-f]{40}$' -or [int]$env:PR_NUMBER -lt 1) { throw 'A merged source SHA and positive PR number are required.' }
+        if ($env:RELEASE_REPOSITORY -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Expected owner/repository.' }
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Publish-Release.ps1'
+        & $script -ArtifactDirectory $env:ARTIFACTS_PATH -Repository $env:RELEASE_REPOSITORY -Commit $env:SOURCE_COMMIT -PullRequest ([int]$env:PR_NUMBER) -ValidateOnly:($env:VALIDATE_ONLY -eq 'true')

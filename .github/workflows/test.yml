@@ -60,6 +60,9 @@ jobs:
       - name: Test release recovery validation
         run: ./scripts/tests/Test-ReleaseRecovery.ps1
 
+      - name: Test publishing and partial-failure recovery
+        run: ./scripts/tests/Test-ReleasePublishing.ps1
+
       - name: Create a separate sample library
         id: fixture
         run: |
@@ -196,3 +199,22 @@ jobs:
           ARTIFACT_NAME: ${{ steps.build.outputs.artifact_name }}
         run: |
           ./scripts/tests/Test-ReleaseRecovery.ps1 -ArtifactDirectory $env:RECOVERY_PATH -OriginalRunId ([long]$env:ORIGINAL_RUN_ID) -ArtifactId ([long]$env:ARTIFACT_ID) -ArtifactName $env:ARTIFACT_NAME
+
+      - name: Exercise publisher artifact validation without publishing
+        id: publish-check
+        uses: ./actions/publish
+        with:
+          artifact-directory: ${{ runner.temp }}/sample-recovery-${{ matrix.os }}
+          repository: owner/library
+          commit: ${{ steps.build.outputs.commit }}
+          pull-request: ${{ steps.build.outputs.pull_request }}
+          validate-only: 'true'
+
+      - name: Verify validation-only publisher outputs
+        env:
+          PUBLISHED: ${{ steps.publish-check.outputs.published }}
+          RELEASE_URL: ${{ steps.publish-check.outputs.release_url }}
+          PACKAGE_ID: ${{ steps.publish-check.outputs.package_id }}
+          VERSION: ${{ steps.publish-check.outputs.version }}
+        run: |
+          if ($env:PUBLISHED -ne 'false' -or $env:RELEASE_URL -or $env:PACKAGE_ID -ne 'Example' -or $env:VERSION -ne '1.3.1') { throw 'Publisher validation-only outputs are incorrect.' }
