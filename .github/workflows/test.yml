@@ -50,11 +50,16 @@ jobs:
       - name: Test release input validation
         run: ./scripts/tests/Test-ReleaseValidation.ps1
 
+      - name: Test release preparation orchestration
+        run: ./scripts/tests/Test-ReleasePreparation.ps1
+
       - name: Create a separate sample library
         id: fixture
         run: |
           $directory = Join-Path $env:RUNNER_TEMP ('sample-library-' + [guid]::NewGuid().ToString('N'))
-          ./scripts/tests/New-ValidationFixture.ps1 -Directory $directory
+          ./scripts/tests/New-ValidationFixture.ps1 -Directory $directory -Buildable
+          git -C $directory remote add origin $directory
+          if ($LASTEXITCODE -ne 0) { throw 'Could not set the sample library local origin.' }
           "directory=$directory" >> $env:GITHUB_OUTPUT
 
       - name: Exercise the shared validation action
@@ -95,3 +100,33 @@ jobs:
           if ($plan.package_id -ne 'Example' -or $plan.version -ne '1.3.1') { throw 'Incorrect plan outputs.' }
           $changes = git -C $env:FIXTURE_PATH status --porcelain
           if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Validation modified the sample library.' }
+
+      - name: Exercise the shared preparation action
+        id: prepare
+        uses: ./actions/prepare
+        with:
+          working-directory: ${{ steps.fixture.outputs.directory }}
+          selected-ref: refs/heads/main
+          version: 1.3.1
+          notes: |
+            - Feature 1
+              - Nested detail
+            - Feature 2
+          artifact-name: sample-preparation-${{ matrix.os }}
+
+      - name: Verify preparation changes and PR content
+        env:
+          BODY_PATH: ${{ steps.prepare.outputs.body_path }}
+          PLAN_PATH: ${{ steps.prepare.outputs.plan_path }}
+          WARNINGS_PATH: ${{ steps.prepare.outputs.warnings_path }}
+          FIXTURE_PATH: ${{ steps.fixture.outputs.directory }}
+        run: |
+          $plan = Get-Content -LiteralPath $env:PLAN_PATH -Raw | ConvertFrom-Json
+          $project = [xml](Get-Content (Join-Path $env:FIXTURE_PATH $plan.project) -Raw)
+          if ($project.Project.PropertyGroup.PackageVersion -ne '1.3.1') { throw 'Preparation did not update version.' }
+          $readme = (Get-Content (Join-Path $env:FIXTURE_PATH $plan.readme) -Raw).ReplaceLineEndings("`n")
+          if (-not $readme.Contains("    - Feature 1`n      - Nested detail")) { throw 'Prepared README notes lost nesting.' }
+          if (-not (Get-Content $env:BODY_PATH -Raw).Contains('- Feature 1')) { throw 'Missing PR body notes.' }
+          if (-not (Get-Content $env:WARNINGS_PATH -Raw).Contains('no tests ran')) { throw 'Unexpected sample warning summary.' }
+          $branch = git -C $env:FIXTURE_PATH branch --show-current
+          if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') { throw 'Preparation created/switched branches.' }

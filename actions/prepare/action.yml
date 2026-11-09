@@ -1,9 +1,125 @@
 name: Release prepare
 description: Prepare version changes, tests and release PR content
 
+inputs:
+  version:
+    description: Next stable major.minor.patch version
+    required: true
+  notes:
+    description: Multiline Markdown release notes
+    required: true
+  package:
+    description: Package key; inferred for a single-package repository
+    default: ''
+  override-reason:
+    description: Reason for a major release or unusual version jump
+    default: ''
+  integration-tests:
+    description: Run public integration tests (true/false)
+    default: 'false'
+  config-path:
+    description: Configuration path relative to the library checkout
+    default: .github/release-config.json
+  selected-ref:
+    description: Workflow ref; must match the configured base branch
+    default: ${{ github.ref }}
+  working-directory:
+    description: Library checkout root
+    default: ${{ github.workspace }}
+  artifact-name:
+    description: Unique name for test reports in this run
+    default: release-preparation-test-results
+
+outputs:
+  sdk:
+    description: Configured .NET SDK
+    value: ${{ steps.plan.outputs.sdk }}
+  package:
+    description: Selected package key
+    value: ${{ steps.plan.outputs.package }}
+  package_id:
+    description: Selected package ID
+    value: ${{ steps.plan.outputs.package_id }}
+  version:
+    description: Release version
+    value: ${{ steps.plan.outputs.version }}
+  branch:
+    description: Release branch to create after successful preparation
+    value: ${{ steps.plan.outputs.branch }}
+  tag:
+    description: Proposed release tag
+    value: ${{ steps.plan.outputs.tag }}
+  base_branch:
+    description: PR target branch
+    value: ${{ steps.plan.outputs.base_branch }}
+  body_path:
+    description: PR description including test warnings (current runner only)
+    value: ${{ steps.plan.outputs.body_path }}
+  plan_path:
+    description: Release plan JSON (current runner only)
+    value: ${{ steps.plan.outputs.plan_path }}
+  results_path:
+    description: Native NUnit/TRX report directory (current runner only)
+    value: ${{ steps.plan.outputs.results_path }}
+  warnings_path:
+    description: Warning summary Markdown (current runner only)
+    value: ${{ steps.review.outputs.warnings_path }}
+
 runs:
   using: composite
   steps:
-    - name: Implementation pending
+    - name: Prepare selected package and preview
+      id: plan
       shell: pwsh
-      run: throw 'The prepare action has not been implemented yet.'
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        RELEASE_NOTES: ${{ inputs.notes }}
+        RELEASE_PACKAGE: ${{ inputs.package }}
+        OVERRIDE_REASON: ${{ inputs.override-reason }}
+        RELEASE_CONFIG_PATH: ${{ inputs.config-path }}
+        SELECTED_REF: ${{ inputs.selected-ref }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Initialize-ReleasePreparation.ps1'
+        $directory = Join-Path $env:RUNNER_TEMP ('release-preparation-' + [guid]::NewGuid().ToString('N'))
+        & $script -Version $env:RELEASE_VERSION -Notes $env:RELEASE_NOTES -Package $env:RELEASE_PACKAGE -OverrideReason $env:OVERRIDE_REASON -ConfigPath $env:RELEASE_CONFIG_PATH -SelectedRef $env:SELECTED_REF -OutputDirectory $directory
+
+    - uses: actions/setup-dotnet@v4.3.1
+      with:
+        dotnet-version: ${{ steps.plan.outputs.sdk }}
+
+    - name: Build and test the selected package
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        PLAN_PATH: ${{ steps.plan.outputs.plan_path }}
+        RESULTS_PATH: ${{ steps.plan.outputs.results_path }}
+        INTEGRATION_TESTS: ${{ inputs.integration-tests }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Invoke-PreparationChecks.ps1'
+        & $script -PlanPath $env:PLAN_PATH -ResultsDirectory $env:RESULTS_PATH -IntegrationTests $env:INTEGRATION_TESTS
+
+    - name: Include warnings in the PR description
+      id: review
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        PLAN_PATH: ${{ steps.plan.outputs.plan_path }}
+        BODY_PATH: ${{ steps.plan.outputs.body_path }}
+        RESULTS_PATH: ${{ steps.plan.outputs.results_path }}
+        PREPARATION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Complete-ReleasePreparation.ps1'
+        & $script -PlanPath $env:PLAN_PATH -BodyPath $env:BODY_PATH -ResultsDirectory $env:RESULTS_PATH -RunUrl $env:PREPARATION_RUN_URL
+
+    - name: Retain preparation test reports
+      if: ${{ always() && !cancelled() && steps.plan.outputs.results_path != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.plan.outputs.results_path }}/
+        if-no-files-found: ignore
+        retention-days: 14
