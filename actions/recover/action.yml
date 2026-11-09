@@ -1,9 +1,92 @@
 name: Release recover
 description: Validate an original release run and its retained artifacts
 
+inputs:
+  original-run-id:
+    description: Original failed merge-triggered publication run ID
+    required: true
+  artifact-id:
+    description: Original release package artifact ID
+    required: true
+  repository:
+    description: Library owner/repository
+    default: ${{ github.repository }}
+  github-token:
+    description: Read-only token for original run, PR and artifact access
+    default: ${{ github.token }}
+
+outputs:
+  sdk:
+    description: Original configured .NET SDK
+    value: ${{ steps.plan.outputs.sdk }}
+  commit:
+    description: Original merged source commit
+    value: ${{ steps.plan.outputs.commit }}
+  pull_request:
+    description: Original preparation PR number
+    value: ${{ steps.plan.outputs.pull_request }}
+  artifact_id:
+    description: Original immutable package artifact ID
+    value: ${{ steps.plan.outputs.artifact_id }}
+  original_run_id:
+    description: Original failed run ID
+    value: ${{ steps.plan.outputs.original_run_id }}
+  artifact_name:
+    description: Original package artifact name
+    value: ${{ steps.plan.outputs.artifact_name }}
+  package_id:
+    description: Verified package ID
+    value: ${{ steps.plan.outputs.package_id }}
+  version:
+    description: Original release version
+    value: ${{ steps.plan.outputs.version }}
+  tag:
+    description: Original release tag
+    value: ${{ steps.plan.outputs.tag }}
+  artifacts_path:
+    description: Verified downloaded package directory on this runner
+    value: ${{ steps.plan.outputs.artifacts_path }}
+  manifest_path:
+    description: Verified original manifest on this runner
+    value: ${{ steps.plan.outputs.manifest_path }}
+
 runs:
   using: composite
   steps:
-    - name: Implementation pending
+    - name: Validate original run and artifact metadata
+      id: source
       shell: pwsh
-      run: throw 'The recover action has not been implemented yet.'
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        RELEASE_REPOSITORY: ${{ inputs.repository }}
+        ORIGINAL_RUN_ID: ${{ inputs.original-run-id }}
+        ARTIFACT_ID: ${{ inputs.artifact-id }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Initialize-ReleaseRecovery.ps1'
+        $directory = Join-Path $env:RUNNER_TEMP ('release-recovery-' + [guid]::NewGuid().ToString('N'))
+        & $script -Repository $env:RELEASE_REPOSITORY -OriginalRunId ([long]$env:ORIGINAL_RUN_ID) -ArtifactId ([long]$env:ARTIFACT_ID) -OutputDirectory $directory
+
+    - name: Download original package artifact
+      uses: actions/download-artifact@v4
+      with:
+        github-token: ${{ inputs.github-token }}
+        repository: ${{ inputs.repository }}
+        run-id: ${{ steps.source.outputs.original_run_id }}
+        artifact-ids: ${{ steps.source.outputs.artifact_id }}
+        path: ${{ steps.source.outputs.artifacts_path }}
+        merge-multiple: true
+
+    - name: Verify original packages and recovery plan
+      id: plan
+      shell: pwsh
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        RELEASE_REPOSITORY: ${{ inputs.repository }}
+        ORIGINAL_RUN_ID: ${{ steps.source.outputs.original_run_id }}
+        ARTIFACT_ID: ${{ steps.source.outputs.artifact_id }}
+        ARTIFACTS_PATH: ${{ steps.source.outputs.artifacts_path }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Get-RecoveryPlan.ps1'
+        & $script -Repository $env:RELEASE_REPOSITORY -OriginalRunId ([long]$env:ORIGINAL_RUN_ID) -ArtifactId ([long]$env:ARTIFACT_ID) -ArtifactDirectory $env:ARTIFACTS_PATH

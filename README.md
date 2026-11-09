@@ -5,9 +5,10 @@ PowerShell scripts for preparing release PRs, building and verifying packages,
 publishing approved releases, and recovering interrupted publications.
 
 Shared composite actions [validate](actions/validate/README.md),
-[prepare](actions/prepare/README.md), and [build](actions/build/README.md) are
+[prepare](actions/prepare/README.md), [build](actions/build/README.md), and
+[recover](actions/recover/README.md) are
 implemented and exercised by CI against a separate sample library.
-Recover/publish remain placeholders; existing
+Publish remains a placeholder; existing
 libraries should keep their current workflows until the complete flow is ready.
 
 ## Repository layout
@@ -25,6 +26,8 @@ scripts/
   Add-TestWarnings.ps1             Add native NUnit warnings to a review summary
   Get-PublishPlan.ps1              Validate a merged PR and extract release metadata
   Get-RecoveryPlan.ps1             Validate an original run and its retained artifacts
+  Get-RecoverySource.ps1           Validate original run/PR/artifact metadata
+  Initialize-ReleaseRecovery.ps1   Preflight the original artifact before download
   Release-PackageFunctions.ps1     Package verification and registry/GitHub helpers
   Publish-Release.ps1              Publish approved packages, tag and GitHub release
   tests/                          Offline/localhost regression tests
@@ -35,6 +38,7 @@ templates/
 actions/validate/                  Shared validation action and usage documentation
 actions/prepare/                   Shared preparation action and usage documentation
 actions/build/                     Shared final-build action and usage documentation
+actions/recover/                   Shared artifact-recovery action and usage documentation
 ```
 
 ## Execution requirements
@@ -138,6 +142,7 @@ pwsh -NoProfile -File ./scripts/tests/Test-ReleaseHttp.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseValidation.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleasePreparation.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseBuild.ps1
+pwsh -NoProfile -File ./scripts/tests/Test-ReleaseRecovery.ps1
 ```
 
 The tests use temporary files/Git repositories, mocked GitHub responses, and a
@@ -146,11 +151,13 @@ or send announcements. They do not build a real library or verify live credentia
 
 [The test workflow](.github/workflows/test.yml) runs on pushes and PRs to `main`,
 and can also be started manually. Its Windows/Linux matrix runs syntax checks and
-all six suites, then exercises validation, preparation and final build using a
+all seven suites, then exercises validation, preparation and final build using a
 separate buildable sample library. The actions install the configured SDK,
 restore/build/pack the sample and upload its verified package artifact. The CI
 sample has no test projects; the regression suites use mocked tests for warnings
-and failure paths. The sample artifacts are not published to a registry.
+and failure paths. CI downloads the built sample artifact and verifies recovery
+against it, using mocked original-run metadata rather than creating a failed PR.
+The sample artifacts are not published to a registry.
 CI needs no repository secrets. Both matrix jobs should pass
 before a shared automation version is released.
 

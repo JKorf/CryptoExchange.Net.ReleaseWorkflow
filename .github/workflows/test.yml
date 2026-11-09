@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   test:
@@ -55,6 +56,9 @@ jobs:
 
       - name: Test final release build orchestration
         run: ./scripts/tests/Test-ReleaseBuild.ps1
+
+      - name: Test release recovery validation
+        run: ./scripts/tests/Test-ReleaseRecovery.ps1
 
       - name: Create a separate sample library
         id: fixture
@@ -176,3 +180,19 @@ jobs:
             if (-not (Test-Path -LiteralPath (Join-Path $env:ARTIFACTS_PATH $file))) { throw "Missing artifact file $file" }
           }
           if (-not (Get-Content $env:SUMMARY_PATH -Raw).Contains('Publication test warnings')) { throw 'Missing final warning summary.' }
+
+      - name: Download the sample package artifact for recovery checks
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.build.outputs.artifact_id }}
+          path: ${{ runner.temp }}/sample-recovery-${{ matrix.os }}
+          merge-multiple: true
+
+      - name: Verify recovery using downloaded sample packages
+        env:
+          RECOVERY_PATH: ${{ runner.temp }}/sample-recovery-${{ matrix.os }}
+          ORIGINAL_RUN_ID: ${{ github.run_id }}
+          ARTIFACT_ID: ${{ steps.build.outputs.artifact_id }}
+          ARTIFACT_NAME: ${{ steps.build.outputs.artifact_name }}
+        run: |
+          ./scripts/tests/Test-ReleaseRecovery.ps1 -ArtifactDirectory $env:RECOVERY_PATH -OriginalRunId ([long]$env:ORIGINAL_RUN_ID) -ArtifactId ([long]$env:ARTIFACT_ID) -ArtifactName $env:ARTIFACT_NAME
