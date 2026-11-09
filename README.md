@@ -4,12 +4,18 @@ Shared release automation for CryptoExchange.Net client libraries. It provides
 PowerShell scripts for preparing release PRs, building and verifying packages,
 publishing approved releases, and recovering interrupted publications.
 
+The first shared composite action, [validate](actions/validate/README.md), is
+implemented and exercised by CI against a separate sample library. The other
+action folders are placeholders; existing libraries should keep using their
+current workflows until the complete shared flow is ready.
+
 ## Repository layout
 
 ```text
 .github/workflows/test.yml         Windows and Linux regression checks
 scripts/
   Prepare-Release.ps1              Validate the version; update project and README
+  Validate-Release.ps1             Validation-only orchestration and action outputs
   Add-TestWarnings.ps1             Add native NUnit warnings to a review summary
   Get-PublishPlan.ps1              Validate a merged PR and extract release metadata
   Get-RecoveryPlan.ps1             Validate an original run and its retained artifacts
@@ -20,6 +26,7 @@ templates/
   prepare-release.yml             Library preparation workflow template
   publish-release.yml             Library publication and recovery workflow template
   release-config.example.json     Example library-specific package configuration
+actions/validate/                  Shared validation action and usage documentation
 ```
 
 ## Execution requirements
@@ -120,6 +127,7 @@ From this repository's root:
 pwsh -NoProfile -File ./scripts/tests/Test-TestWarnings.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-PublishRelease.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseHttp.ps1
+pwsh -NoProfile -File ./scripts/tests/Test-ReleaseValidation.ps1
 ```
 
 The tests use temporary files/Git repositories, mocked GitHub responses, and a
@@ -128,7 +136,8 @@ or send announcements. They do not build a real library or verify live credentia
 
 [The test workflow](.github/workflows/test.yml) runs on pushes and PRs to `main`,
 and can also be started manually. Its Windows/Linux matrix runs syntax checks and
-all three suites. CI needs no repository secrets. Both matrix jobs should pass
+all four suites, then exercises the validate action for patch and major releases
+using a separate sample library. CI needs no repository secrets. Both matrix jobs should pass
 before a shared automation version is released.
 
 ## Recovering a release

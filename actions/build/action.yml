@@ -1,0 +1,9 @@
+name: Release build
+description: Build, test and package the merged release
+
+runs:
+  using: composite
+  steps:
+    - name: Implementation pending
+      shell: pwsh
+      run: throw 'The build action has not been implemented yet.'

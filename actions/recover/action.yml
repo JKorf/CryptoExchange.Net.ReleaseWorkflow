@@ -1,0 +1,9 @@
+name: Release recover
+description: Validate an original release run and its retained artifacts
+
+runs:
+  using: composite
+  steps:
+    - name: Implementation pending
+      shell: pwsh
+      run: throw 'The recover action has not been implemented yet.'

@@ -46,3 +46,52 @@ jobs:
 
       - name: Test HTTP handling
         run: ./scripts/tests/Test-ReleaseHttp.ps1
+
+      - name: Test release input validation
+        run: ./scripts/tests/Test-ReleaseValidation.ps1
+
+      - name: Create a separate sample library
+        id: fixture
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP ('sample-library-' + [guid]::NewGuid().ToString('N'))
+          ./scripts/tests/New-ValidationFixture.ps1 -Directory $directory
+          "directory=$directory" >> $env:GITHUB_OUTPUT
+
+      - name: Exercise the shared validation action
+        id: validate
+        uses: ./actions/validate
+        with:
+          working-directory: ${{ steps.fixture.outputs.directory }}
+          selected-ref: refs/heads/main
+          version: 1.3.1
+          notes: |
+            - Feature 1
+              - Nested detail
+            - Feature 2
+
+      - name: Exercise major-version approval detection
+        id: major
+        uses: ./actions/validate
+        with:
+          working-directory: ${{ steps.fixture.outputs.directory }}
+          selected-ref: refs/heads/main
+          version: 2.0.0
+          notes: '- Breaking API update'
+          override-reason: Breaking API update in the sample library
+
+      - name: Verify composite action outputs and unchanged source
+        env:
+          NORMAL_APPROVAL: ${{ steps.validate.outputs.requires_approval }}
+          MAJOR_APPROVAL: ${{ steps.major.outputs.requires_approval }}
+          RELEASE_BRANCH: ${{ steps.validate.outputs.branch }}
+          BODY_PATH: ${{ steps.validate.outputs.body_path }}
+          PLAN_PATH: ${{ steps.validate.outputs.plan_path }}
+          FIXTURE_PATH: ${{ steps.fixture.outputs.directory }}
+        run: |
+          if ($env:NORMAL_APPROVAL -ne 'false' -or $env:MAJOR_APPROVAL -ne 'true') { throw 'Incorrect approval outputs.' }
+          if ($env:RELEASE_BRANCH -ne 'release/example/1.3.1') { throw 'Incorrect branch output.' }
+          if (-not (Get-Content -LiteralPath $env:BODY_PATH -Raw).Contains("- Feature 1`n  - Nested detail")) { throw 'Release notes did not retain indentation.' }
+          $plan = Get-Content -LiteralPath $env:PLAN_PATH -Raw | ConvertFrom-Json
+          if ($plan.package_id -ne 'Example' -or $plan.version -ne '1.3.1') { throw 'Incorrect plan outputs.' }
+          $changes = git -C $env:FIXTURE_PATH status --porcelain
+          if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Validation modified the sample library.' }

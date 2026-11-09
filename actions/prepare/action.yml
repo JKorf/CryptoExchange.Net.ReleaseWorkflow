@@ -1,0 +1,9 @@
+name: Release prepare
+description: Prepare version changes, tests and release PR content
+
+runs:
+  using: composite
+  steps:
+    - name: Implementation pending
+      shell: pwsh
+      run: throw 'The prepare action has not been implemented yet.'
