@@ -4,9 +4,10 @@ Shared release automation for CryptoExchange.Net client libraries. It provides
 PowerShell scripts for preparing release PRs, building and verifying packages,
 publishing approved releases, and recovering interrupted publications.
 
-Shared composite actions [validate](actions/validate/README.md) and
-[prepare](actions/prepare/README.md) are implemented and exercised by CI against
-a separate sample library. Build/recover/publish remain placeholders; existing
+Shared composite actions [validate](actions/validate/README.md),
+[prepare](actions/prepare/README.md), and [build](actions/build/README.md) are
+implemented and exercised by CI against a separate sample library.
+Recover/publish remain placeholders; existing
 libraries should keep their current workflows until the complete flow is ready.
 
 ## Repository layout
@@ -19,6 +20,8 @@ scripts/
   Initialize-ReleasePreparation.ps1  Validate remote refs and update source
   Invoke-PreparationChecks.ps1     Restore, build and test the selected package
   Complete-ReleasePreparation.ps1  Include warning reports in the PR description
+  Initialize-ReleaseBuild.ps1      Validate the merged checkout and artifact plan
+  Complete-ReleaseBuild.ps1        Pack, verify checksums and produce final review
   Add-TestWarnings.ps1             Add native NUnit warnings to a review summary
   Get-PublishPlan.ps1              Validate a merged PR and extract release metadata
   Get-RecoveryPlan.ps1             Validate an original run and its retained artifacts
@@ -31,6 +34,7 @@ templates/
   release-config.example.json     Example library-specific package configuration
 actions/validate/                  Shared validation action and usage documentation
 actions/prepare/                   Shared preparation action and usage documentation
+actions/build/                     Shared final-build action and usage documentation
 ```
 
 ## Execution requirements
@@ -133,6 +137,7 @@ pwsh -NoProfile -File ./scripts/tests/Test-PublishRelease.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseHttp.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleaseValidation.ps1
 pwsh -NoProfile -File ./scripts/tests/Test-ReleasePreparation.ps1
+pwsh -NoProfile -File ./scripts/tests/Test-ReleaseBuild.ps1
 ```
 
 The tests use temporary files/Git repositories, mocked GitHub responses, and a
@@ -141,9 +146,11 @@ or send announcements. They do not build a real library or verify live credentia
 
 [The test workflow](.github/workflows/test.yml) runs on pushes and PRs to `main`,
 and can also be started manually. Its Windows/Linux matrix runs syntax checks and
-all five suites, then exercises validation for patch/major releases and preparation
-using a separate buildable sample library. Preparation installs the configured SDK
-and performs a real restore/build of that sample; the sample has no test projects.
+all six suites, then exercises validation, preparation and final build using a
+separate buildable sample library. The actions install the configured SDK,
+restore/build/pack the sample and upload its verified package artifact. The CI
+sample has no test projects; the regression suites use mocked tests for warnings
+and failure paths. The sample artifacts are not published to a registry.
 CI needs no repository secrets. Both matrix jobs should pass
 before a shared automation version is released.
 

@@ -53,6 +53,9 @@ jobs:
       - name: Test release preparation orchestration
         run: ./scripts/tests/Test-ReleasePreparation.ps1
 
+      - name: Test final release build orchestration
+        run: ./scripts/tests/Test-ReleaseBuild.ps1
+
       - name: Create a separate sample library
         id: fixture
         run: |
@@ -130,3 +133,46 @@ jobs:
           if (-not (Get-Content $env:WARNINGS_PATH -Raw).Contains('no tests ran')) { throw 'Unexpected sample warning summary.' }
           $branch = git -C $env:FIXTURE_PATH branch --show-current
           if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') { throw 'Preparation created/switched branches.' }
+
+      - name: Commit prepared sample and create merged PR event
+        id: merged
+        env:
+          FIXTURE_PATH: ${{ steps.fixture.outputs.directory }}
+          SAMPLE_PR: ${{ matrix.os == 'windows-latest' && '902' || '901' }}
+        run: |
+          git -C $env:FIXTURE_PATH add Example.csproj README.md
+          if ($LASTEXITCODE -ne 0) { throw 'Could not stage prepared sample.' }
+          git -C $env:FIXTURE_PATH -c user.name=Fixture -c user.email=fixture@example.test commit --quiet -m 'Prepared sample release'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit prepared sample.' }
+          $commit = git -C $env:FIXTURE_PATH rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read sample commit.' }
+          $event = @{ action = 'closed'; pull_request = @{ number = [int]$env:SAMPLE_PR; merged = $true; merge_commit_sha = $commit; head = @{ ref = 'release/example/1.3.1'; repo = @{ full_name = 'owner/library' } }; base = @{ ref = 'main'; repo = @{ full_name = 'owner/library' } } } }
+          $path = Join-Path $env:RUNNER_TEMP ('merged-event-' + [guid]::NewGuid().ToString('N') + '.json')
+          $event | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+          "event_path=$path" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+
+      - name: Exercise the shared final build action
+        id: build
+        uses: ./actions/build
+        with:
+          working-directory: ${{ steps.fixture.outputs.directory }}
+          repository: owner/library
+          event-path: ${{ steps.merged.outputs.event_path }}
+
+      - name: Verify final package artifact outputs
+        env:
+          ARTIFACT_ID: ${{ steps.build.outputs.artifact_id }}
+          ARTIFACTS_PATH: ${{ steps.build.outputs.artifacts_path }}
+          MANIFEST_PATH: ${{ steps.build.outputs.manifest_path }}
+          SOURCE_COMMIT: ${{ steps.merged.outputs.commit }}
+          BUILD_COMMIT: ${{ steps.build.outputs.commit }}
+          SUMMARY_PATH: ${{ steps.build.outputs.summary_path }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ARTIFACT_ID) -or $env:BUILD_COMMIT -ne $env:SOURCE_COMMIT) { throw 'Invalid artifact/source outputs.' }
+          $manifest = Get-Content $env:MANIFEST_PATH -Raw | ConvertFrom-Json
+          if ($manifest.version -ne '1.3.1' -or @($manifest.files).Count -ne 3) { throw 'Final manifest is invalid.' }
+          foreach ($file in @($manifest.packageFile, $manifest.symbolFile, 'release-notes.md')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $env:ARTIFACTS_PATH $file))) { throw "Missing artifact file $file" }
+          }
+          if (-not (Get-Content $env:SUMMARY_PATH -Raw).Contains('Publication test warnings')) { throw 'Missing final warning summary.' }

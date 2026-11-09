@@ -1,9 +1,117 @@
 name: Release build
 description: Build, test and package the merged release
 
+inputs:
+  event-path:
+    description: Merged pull_request event JSON
+    default: ${{ github.event_path }}
+  repository:
+    description: Owner/repository of the library
+    default: ${{ github.repository }}
+  working-directory:
+    description: Clean library checkout at the merged source commit
+    default: ${{ github.workspace }}
+  config-path:
+    description: Configuration relative to the library root
+    default: .github/release-config.json
+
+outputs:
+  sdk:
+    description: Configured .NET SDK
+    value: ${{ steps.plan.outputs.sdk }}
+  commit:
+    description: Exact merged source commit
+    value: ${{ steps.plan.outputs.commit }}
+  pull_request:
+    description: Preparation PR number
+    value: ${{ steps.plan.outputs.pull_request }}
+  package_id:
+    description: Selected NuGet package ID
+    value: ${{ steps.plan.outputs.package_id }}
+  version:
+    description: Release version
+    value: ${{ steps.plan.outputs.version }}
+  tag:
+    description: Release tag
+    value: ${{ steps.plan.outputs.tag }}
+  artifacts_path:
+    description: Package artifact directory on this runner
+    value: ${{ steps.plan.outputs.artifacts_path }}
+  results_path:
+    description: Test report directory on this runner
+    value: ${{ steps.plan.outputs.results_path }}
+  manifest_path:
+    description: Verified manifest path on this runner
+    value: ${{ steps.plan.outputs.manifest_path }}
+  summary_path:
+    description: Publication review summary path on this runner
+    value: ${{ steps.review.outputs.summary_path }}
+  artifact_name:
+    description: Uploaded release package artifact name
+    value: ${{ steps.plan.outputs.artifact_name }}
+  artifact_id:
+    description: Immutable uploaded package artifact ID
+    value: ${{ steps.artifacts.outputs.artifact-id }}
+
 runs:
   using: composite
   steps:
-    - name: Implementation pending
+    - name: Validate exact merged source
+      id: plan
       shell: pwsh
-      run: throw 'The build action has not been implemented yet.'
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        EVENT_PATH: ${{ inputs.event-path }}
+        RELEASE_REPOSITORY: ${{ inputs.repository }}
+        RELEASE_CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Initialize-ReleaseBuild.ps1'
+        $directory = Join-Path $env:RUNNER_TEMP ('release-build-' + [guid]::NewGuid().ToString('N'))
+        & $script -EventPath $env:EVENT_PATH -Repository $env:RELEASE_REPOSITORY -ConfigPath $env:RELEASE_CONFIG_PATH -OutputDirectory $directory
+
+    - uses: actions/setup-dotnet@v4.3.1
+      with:
+        dotnet-version: ${{ steps.plan.outputs.sdk }}
+
+    - name: Build and test final source
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        MANIFEST_PATH: ${{ steps.plan.outputs.manifest_path }}
+        RESULTS_PATH: ${{ steps.plan.outputs.results_path }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Invoke-PreparationChecks.ps1'
+        & $script -PlanPath $env:MANIFEST_PATH -ResultsDirectory $env:RESULTS_PATH -Publication
+
+    - name: Pack, verify and produce publication review
+      id: review
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AUTOMATION_ACTION_PATH: ${{ github.action_path }}
+        MANIFEST_PATH: ${{ steps.plan.outputs.manifest_path }}
+        RESULTS_PATH: ${{ steps.plan.outputs.results_path }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        $script = Join-Path $env:AUTOMATION_ACTION_PATH '../../scripts/Complete-ReleaseBuild.ps1'
+        & $script -ManifestPath $env:MANIFEST_PATH -ResultsDirectory $env:RESULTS_PATH -RunUrl $env:RUN_URL
+
+    - name: Retain final test reports
+      if: ${{ always() && !cancelled() && steps.plan.outputs.results_path != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.plan.outputs.test_artifact_name || format('publication-test-results-{0}', github.run_attempt) }}
+        path: ${{ steps.plan.outputs.results_path }}/
+        if-no-files-found: ignore
+        retention-days: 30
+
+    - name: Retain verified package candidates
+      id: artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.plan.outputs.artifact_name }}
+        path: ${{ steps.plan.outputs.artifacts_path }}/
+        if-no-files-found: error
+        retention-days: 30
