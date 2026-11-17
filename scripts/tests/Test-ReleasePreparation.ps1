@@ -54,6 +54,8 @@ try {
     & "$scripts/Invoke-PreparationChecks.ps1" -PlanPath $planPath -ResultsDirectory $results -IntegrationTests true
     if ($preparationMock.Integration -ne '1' -or $env:INTEGRATION -ne 'previous-value') { throw 'Integration setting/restore failed.' }
     if ($preparationMock.Calls.Count -ne 5 -or ($preparationMock.Calls | Where-Object { $_ -like 'build*' -and $_ -notmatch '-m:\s*1' })) { throw "Unexpected build/test calls: $($preparationMock.Calls -join '; ')" }
+    $restores = @($preparationMock.Calls | Where-Object { $_ -like 'restore*' })
+    if ($restores.Count -ne 2 -or @($restores | Where-Object { $_ -notmatch '-p:Configuration=Release' }).Count) { throw 'Library and test references must both restore Release frameworks.' }
     & "$scripts/Complete-ReleasePreparation.ps1" -PlanPath $planPath -BodyPath $bodyPath -ResultsDirectory $results
     $body = Get-Content $bodyPath -Raw
     if (-not $body.Contains('Missing property example') -or -not $body.Contains($notes)) { throw 'PR warning summary or original notes were lost.' }

@@ -19,7 +19,9 @@ if ($Publication) {
 }
 $projects = @(@($plan.project) + @($testProjects) | Select-Object -Unique)
 foreach ($project in $projects) {
-    dotnet restore $project
+    # Frameworks and dependencies may differ between Debug and Release. Restore
+    # every project (including references from tests) with the build properties.
+    dotnet restore $project '-p:Configuration=Release' '-p:GeneratePackageOnBuild=false' @sourceArguments
     if ($LASTEXITCODE -ne 0) { throw "Restore failed: $project" }
     dotnet build $project --configuration Release --no-restore -m:1 -p:GeneratePackageOnBuild=false @sourceArguments
     if ($LASTEXITCODE -ne 0) { throw "Build failed: $project" }

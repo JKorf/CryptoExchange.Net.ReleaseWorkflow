@@ -12,7 +12,9 @@ foreach ($name in @('.git', '.gitignore', 'Example.cs', 'Example.csproj', 'READM
 New-Item -ItemType Directory -Path (Join-Path $Directory '.github') -Force | Out-Null
 $project = '<Project><PropertyGroup><PackageId>Example</PackageId><PackageVersion>1.3.0</PackageVersion><AssemblyVersion>1.3.0</AssemblyVersion><FileVersion>1.3.0</FileVersion></PropertyGroup></Project>'
 if ($Buildable) {
-    $project = $project.Replace('<Project>', '<Project Sdk="Microsoft.NET.Sdk">').Replace('<PropertyGroup>', '<PropertyGroup><TargetFramework>net10.0</TargetFramework><RepositoryUrl>https://github.com/owner/library</RepositoryUrl><RepositoryType>git</RepositoryType><PublishRepositoryUrl>true</PublishRepositoryUrl>')
+    # Match libraries that deliberately build fewer frameworks in Debug. A
+    # default Debug restore followed by a Release --no-restore build must fail.
+    $project = $project.Replace('<Project>', '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFrameworks>netstandard2.1;net10.0</TargetFrameworks></PropertyGroup><PropertyGroup Condition="''$(Configuration)'' == ''Debug''"><TargetFrameworks>net10.0</TargetFrameworks></PropertyGroup>').Replace('<PropertyGroup><PackageId>', '<PropertyGroup><RepositoryUrl>https://github.com/owner/library</RepositoryUrl><RepositoryType>git</RepositoryType><PublishRepositoryUrl>true</PublishRepositoryUrl><PackageId>')
     "bin/`nobj/" | Set-Content -LiteralPath (Join-Path $Directory '.gitignore') -Encoding utf8NoBOM
     'public static class ExampleApi { public static string Name => "sample"; }' | Set-Content -LiteralPath (Join-Path $Directory 'Example.cs') -Encoding utf8NoBOM
 }

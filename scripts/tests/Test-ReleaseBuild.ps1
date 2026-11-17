@@ -68,6 +68,8 @@ try {
     & "$scripts/Invoke-PreparationChecks.ps1" -PlanPath $manifestPath -ResultsDirectory $results -Publication
     if ($buildMock.Integration -ne '1' -or $env:INTEGRATION -ne 'previous-value') { throw 'Final integration-test policy was not respected.' }
     if (@($buildMock.Calls | Where-Object { $_ -like 'build*' -and $_ -like "*RepositoryCommit=$commit*" }).Count -ne 2) { throw 'Builds were not tied to source commit.' }
+    $restores = @($buildMock.Calls | Where-Object { $_ -like 'restore*' })
+    if ($restores.Count -ne 2 -or @($restores | Where-Object { $_ -notmatch '-p:Configuration=Release' -or $_ -notlike "*RepositoryCommit=$commit*" }).Count) { throw 'Publication restores must use Release frameworks and the merged source identity.' }
     $checks += 2
     & "$scripts/Complete-ReleaseBuild.ps1" -ManifestPath $manifestPath -ResultsDirectory $results
     $verified = Get-Content $manifestPath -Raw | ConvertFrom-Json
