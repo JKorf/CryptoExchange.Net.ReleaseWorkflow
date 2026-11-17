@@ -133,7 +133,8 @@ jobs:
         run: |
           $plan = Get-Content -LiteralPath $env:PLAN_PATH -Raw | ConvertFrom-Json
           $project = [xml](Get-Content (Join-Path $env:FIXTURE_PATH $plan.project) -Raw)
-          if ($project.Project.PropertyGroup.PackageVersion -ne '1.3.1') { throw 'Preparation did not update version.' }
+          $versions = $project.SelectNodes('/Project/PropertyGroup/PackageVersion')
+          if ($versions.Count -ne 1 -or $versions[0].InnerText -ne '1.3.1') { throw 'Preparation did not update version.' }
           $readme = (Get-Content (Join-Path $env:FIXTURE_PATH $plan.readme) -Raw).ReplaceLineEndings("`n")
           if (-not $readme.Contains("    - Feature 1`n      - Nested detail")) { throw 'Prepared README notes lost nesting.' }
           if (-not (Get-Content $env:BODY_PATH -Raw).Contains('- Feature 1')) { throw 'Missing PR body notes.' }

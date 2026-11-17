@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $scripts = (Resolve-Path "$PSScriptRoot/..").Path
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('preparation-test-' + [guid]::NewGuid().ToString('N'))
-& "$PSScriptRoot/New-ValidationFixture.ps1" -Directory $fixture
+& "$PSScriptRoot/New-ValidationFixture.ps1" -Directory $fixture -Buildable
 $oldNativeExitCode = $LASTEXITCODE
 $oldOutput = $env:GITHUB_OUTPUT; $oldSummary = $env:GITHUB_STEP_SUMMARY; $oldIntegration = $env:INTEGRATION
 $output = Join-Path ([IO.Path]::GetTempPath()) ('preparation-output-' + [guid]::NewGuid().ToString('N'))
@@ -29,7 +29,8 @@ try {
     git update-ref -d refs/heads/release/example/1.3.1
     if ($LASTEXITCODE -ne 0) { throw 'Cannot reset fixture collision.' }
     & "$scripts/Initialize-ReleasePreparation.ps1" -Version 1.3.1 -Notes $notes -SelectedRef refs/heads/main -OutputDirectory $directory
-    if (([xml](Get-Content Example.csproj -Raw)).Project.PropertyGroup.PackageVersion -ne '1.3.1') { throw 'Project version was not updated.' }
+    $versions = ([xml](Get-Content Example.csproj -Raw)).SelectNodes('/Project/PropertyGroup/PackageVersion')
+    if ($versions.Count -ne 1 -or $versions[0].InnerText -ne '1.3.1') { throw 'Project version was not updated.' }
     $readme = (Get-Content README.md -Raw).ReplaceLineEndings("`n")
     if (-not $readme.Contains("    - Feature`n      - Nested detail")) { throw 'README notes lost indentation.' }
     $checks += 2
